@@ -62,78 +62,133 @@ function onchange() {
  * Update the language code.
  */
 function updateLanguage() {
-  // Generate name.
   var code = [];
-  code.push("Blockly.Blocks['" + blockType + "'] = {");
   var rootBlock = getRootBlock();
   if (rootBlock) {
-    code.push("  init: function() {");
-    code.push("    this.setHelpUrl('http://www.example.com/');");
-    // Generate colour.
-    var colourBlock = rootBlock.getInputTargetBlock('COLOUR');
-    if (colourBlock && !colourBlock.disabled) {
-      var hue = parseInt(colourBlock.getFieldValue('HUE'), 10);
-      code.push('    this.setColour(' + hue + ');');
-    }
-    // Generate inputs.
-    var TYPES = {'input_value': 'appendValueInput',
-                 'input_statement': 'appendStatementInput',
-                 'input_dummy': 'appendDummyInput'};
-    var inputVarDefined = false;
-    var contentsBlock = rootBlock.getInputTargetBlock('INPUTS');
-    while (contentsBlock) {
-      if (!contentsBlock.disabled && !contentsBlock.getInheritedDisabled()) {
-        var align = contentsBlock.getFieldValue('ALIGN');
-        var fields = getFields(contentsBlock.getInputTargetBlock('FIELDS'));
-        var name = '';
-        // Dummy inputs don't have names.  Other inputs do.
-        if (contentsBlock.type != 'input_dummy') {
-          name = escapeString(contentsBlock.getFieldValue('INPUTNAME'));
-        }
-        var check = getOptTypesFrom(contentsBlock, 'TYPE');
-        code.push('    this.' + TYPES[contentsBlock.type] +
-            '(' + name + ')');
-        if (check && check != 'null') {
-          code.push('        .setCheck(' + check + ')');
-        }
-        if (align != 'LEFT') {
-          code.push('        .setAlign(Blockly.ALIGN_' + align + ')');
-        }
-        for (var x = 0; x < fields.length; x++) {
-          code.push('        .appendField(' + fields[x] + ')');
-        }
-        // Add semicolon to last line to finish the statement.
-        code[code.length - 1] += ';';
-      }
-      contentsBlock = contentsBlock.nextConnection &&
-          contentsBlock.nextConnection.targetBlock();
-    }
-    // Generate inline/external switch.
-    if (rootBlock.getFieldValue('INLINE') == 'INT') {
-      code.push('    this.setInputsInline(true);');
-    }
-    // Generate output, or next/previous connections.
-    switch (rootBlock.getFieldValue('CONNECTIONS')) {
-      case 'LEFT':
-        code.push(connectionLine_('setOutput', 'OUTPUTTYPE'));
+    switch (document.getElementById('format').value) {
+      case 'JSON':
+        formatJson(code, rootBlock);
         break;
-      case 'BOTH':
-        code.push(connectionLine_('setPreviousStatement', 'TOPTYPE'));
-        code.push(connectionLine_('setNextStatement', 'BOTTOMTYPE'));
-        break;
-      case 'TOP':
-        code.push(connectionLine_('setPreviousStatement', 'TOPTYPE'));
-        break;
-      case 'BOTTOM':
-        code.push(connectionLine_('setNextStatement', 'BOTTOMTYPE'));
+      case 'JavaScript':
+        formatJavaScript(code, rootBlock);
         break;
     }
-    code.push("    this.setTooltip('');");
-    code.push("  }");
   }
-  code.push("};");
-
   injectCode(code, 'languagePre');
+}
+
+/**
+ * Update the language code as JSON.
+ */
+function formatJson(code, rootBlock) {
+  var JS = {};
+  JS.name = blockType;
+  JS.helpUrl = 'http://www.example.com/';
+  // Generate colour.
+  var colourBlock = rootBlock.getInputTargetBlock('COLOUR');
+  if (colourBlock && !colourBlock.disabled) {
+    var hue = parseInt(colourBlock.getFieldValue('HUE'), 10);
+    JS.colour = hue;
+  }
+  // TODO: Generate inputs.
+  // Generate inline/external switch.
+  if (rootBlock.getFieldValue('INLINE') == 'INT') {
+    JS.inputsInline = true;
+  }
+  // Generate output, or next/previous connections.
+  switch (rootBlock.getFieldValue('CONNECTIONS')) {
+    case 'LEFT':
+      JS.output =
+          JSON.parse(getOptTypesFrom(rootBlock, 'OUTPUTTYPE') || 'null');
+      break;
+    case 'BOTH':
+      JS.previousStatement =
+          JSON.parse(getOptTypesFrom(rootBlock, 'TOPTYPE') || 'null');
+      JS.nextStatement =
+          JSON.parse(getOptTypesFrom(rootBlock, 'BOTTOMTYPE') || 'null');
+      break;
+    case 'TOP':
+      JS.previousStatement =
+          JSON.parse(getOptTypesFrom(rootBlock, 'TOPTYPE') || 'null');
+      break;
+    case 'BOTTOM':
+      JS.nextStatement =
+          JSON.parse(getOptTypesFrom(rootBlock, 'BOTTOMTYPE') || 'null');
+      break;
+  }
+  JS.tooltip = '';
+  code.push(JSON.stringify(JS, null, '  '));
+}
+
+/**
+ * Update the language code as JavaScript.
+ */
+function formatJavaScript(code, rootBlock) {
+  code.push("Blockly.Blocks['" + blockType + "'] = {");
+  code.push("  init: function() {");
+  code.push("    this.setHelpUrl('http://www.example.com/');");
+  // Generate colour.
+  var colourBlock = rootBlock.getInputTargetBlock('COLOUR');
+  if (colourBlock && !colourBlock.disabled) {
+    var hue = parseInt(colourBlock.getFieldValue('HUE'), 10);
+    code.push('    this.setColour(' + hue + ');');
+  }
+  // Generate inputs.
+  var TYPES = {'input_value': 'appendValueInput',
+               'input_statement': 'appendStatementInput',
+               'input_dummy': 'appendDummyInput'};
+  var inputVarDefined = false;
+  var contentsBlock = rootBlock.getInputTargetBlock('INPUTS');
+  while (contentsBlock) {
+    if (!contentsBlock.disabled && !contentsBlock.getInheritedDisabled()) {
+      var align = contentsBlock.getFieldValue('ALIGN');
+      var fields = getFields(contentsBlock.getInputTargetBlock('FIELDS'));
+      var name = '';
+      // Dummy inputs don't have names.  Other inputs do.
+      if (contentsBlock.type != 'input_dummy') {
+        name = escapeString(contentsBlock.getFieldValue('INPUTNAME'));
+      }
+      var check = getOptTypesFrom(contentsBlock, 'TYPE');
+      code.push('    this.' + TYPES[contentsBlock.type] +
+          '(' + name + ')');
+      if (check) {
+        code.push('        .setCheck(' + check + ')');
+      }
+      if (align != 'LEFT') {
+        code.push('        .setAlign(Blockly.ALIGN_' + align + ')');
+      }
+      for (var x = 0; x < fields.length; x++) {
+        code.push('        .appendField(' + fields[x] + ')');
+      }
+      // Add semicolon to last line to finish the statement.
+      code[code.length - 1] += ';';
+    }
+    contentsBlock = contentsBlock.nextConnection &&
+        contentsBlock.nextConnection.targetBlock();
+  }
+  // Generate inline/external switch.
+  if (rootBlock.getFieldValue('INLINE') == 'INT') {
+    code.push('    this.setInputsInline(true);');
+  }
+  // Generate output, or next/previous connections.
+  switch (rootBlock.getFieldValue('CONNECTIONS')) {
+    case 'LEFT':
+      code.push(connectionLineJS_('setOutput', 'OUTPUTTYPE'));
+      break;
+    case 'BOTH':
+      code.push(connectionLineJS_('setPreviousStatement', 'TOPTYPE'));
+      code.push(connectionLineJS_('setNextStatement', 'BOTTOMTYPE'));
+      break;
+    case 'TOP':
+      code.push(connectionLineJS_('setPreviousStatement', 'TOPTYPE'));
+      break;
+    case 'BOTTOM':
+      code.push(connectionLineJS_('setNextStatement', 'BOTTOMTYPE'));
+      break;
+  }
+  code.push("    this.setTooltip('');");
+  code.push("  }");
+  code.push("};");
 }
 
 /**
@@ -143,10 +198,12 @@ function updateLanguage() {
  * @return {string} Line of JavaScript code to create connection.
  * @private
  */
-function connectionLine_(functionName, typeName) {
+function connectionLineJS_(functionName, typeName) {
   var type = getOptTypesFrom(getRootBlock(), typeName);
   if (type) {
     type = ', ' + type;
+  } else {
+    type = '';
   }
   return '    this.' + functionName + '(true' + type + ');';
 }
@@ -251,16 +308,16 @@ function escapeString(string) {
  * Format as a string for appending to the generated code.
  * @param {!Blockly.Block} block Block with input.
  * @param {string} name Name of the input.
- * @return {string} String defining the types.
+ * @return {?string} String defining the types.
  */
 function getOptTypesFrom(block, name) {
   var types = getTypesFrom_(block, name);
   if (types.length == 0) {
-    return '';
-  } else if (types.length == 1) {
-    return types[0];
+    return undefined;
   } else if (types.indexOf('null') != -1) {
     return 'null';
+  } else if (types.length == 1) {
+    return types[0];
   } else {
     return '[' + types.join(', ') + ']';
   }
@@ -406,9 +463,13 @@ function updatePreview() {
          scrollbars: true});
     oldDir = newDir;
   }
-  var code = document.getElementById('languagePre').textContent;
+  var code = [];
+  var rootBlock = getRootBlock();
+  if (rootBlock) {
+    formatJavaScript(code, rootBlock);
+  }
   previewWorkspace.clear();
-  eval(code);
+  eval(code.join('\n'));
   // Create the preview block.
   var previewBlock = Blockly.Block.obtain(previewWorkspace, blockType);
   previewBlock.initSvg();
@@ -504,6 +565,8 @@ function init() {
   mainWorkspace.addChangeListener(onchange);
   document.getElementById('direction')
       .addEventListener('change', updatePreview);
+  document.getElementById('format')
+      .addEventListener('change', updateLanguage);
   document.getElementById('language')
       .addEventListener('change', updateGenerator);
 }
