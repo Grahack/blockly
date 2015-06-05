@@ -83,14 +83,50 @@ function updateLanguage() {
 function formatJson(code, rootBlock) {
   var JS = {};
   JS.name = blockType;
-  JS.helpUrl = 'http://www.example.com/';
   // Generate colour.
   var colourBlock = rootBlock.getInputTargetBlock('COLOUR');
   if (colourBlock && !colourBlock.disabled) {
     var hue = parseInt(colourBlock.getFieldValue('HUE'), 10);
     JS.colour = hue;
   }
-  // TODO: Generate inputs.
+  // Generate inputs.
+  var template = [];
+  var args = [];
+  var contentsBlock = rootBlock.getInputTargetBlock('INPUTS');
+  while (contentsBlock) {
+    if (!contentsBlock.disabled && !contentsBlock.getInheritedDisabled()) {
+      var fields = getFieldsJson_(contentsBlock.getInputTargetBlock('FIELDS'));
+      for (var i = 0; i < fields.length; i++) {
+        if (typeof fields[i] == 'string') {
+          template.push(fields[i].replace(/%/g, '%%'));
+        } else {
+          args.push(fields[i]);
+          template.push('%' + args.length);
+        }
+      }
+
+      var input = {type: contentsBlock.type};
+      input.name = '';
+      // Dummy inputs don't have names.  Other inputs do.
+      if (contentsBlock.type != 'input_dummy') {
+        input.name = contentsBlock.getFieldValue('INPUTNAME');
+      }
+      var check = JSON.parse(getOptTypesFrom(contentsBlock, 'TYPE') || 'null');
+      if (check) {
+        input.check = check;
+      }
+      var align = contentsBlock.getFieldValue('ALIGN');
+      if (align != 'LEFT') {
+        input.align = align;
+      }
+      args.push(input);
+      template.push('%' + args.length);
+    }
+    contentsBlock = contentsBlock.nextConnection &&
+        contentsBlock.nextConnection.targetBlock();
+  }
+  JS.template = template.join(' ');
+  JS.args = args;
   // Generate inline/external switch.
   if (rootBlock.getFieldValue('INLINE') == 'INT') {
     JS.inputsInline = true;
@@ -117,6 +153,7 @@ function formatJson(code, rootBlock) {
       break;
   }
   JS.tooltip = '';
+  JS.helpUrl = 'http://www.example.com/';
   code.push(JSON.stringify(JS, null, '  '));
 }
 
@@ -126,7 +163,6 @@ function formatJson(code, rootBlock) {
 function formatJavaScript(code, rootBlock) {
   code.push("Blockly.Blocks['" + blockType + "'] = {");
   code.push("  init: function() {");
-  code.push("    this.setHelpUrl('http://www.example.com/');");
   // Generate colour.
   var colourBlock = rootBlock.getInputTargetBlock('COLOUR');
   if (colourBlock && !colourBlock.disabled) {
@@ -137,28 +173,26 @@ function formatJavaScript(code, rootBlock) {
   var TYPES = {'input_value': 'appendValueInput',
                'input_statement': 'appendStatementInput',
                'input_dummy': 'appendDummyInput'};
-  var inputVarDefined = false;
   var contentsBlock = rootBlock.getInputTargetBlock('INPUTS');
   while (contentsBlock) {
     if (!contentsBlock.disabled && !contentsBlock.getInheritedDisabled()) {
-      var align = contentsBlock.getFieldValue('ALIGN');
-      var fields = getFields(contentsBlock.getInputTargetBlock('FIELDS'));
       var name = '';
       // Dummy inputs don't have names.  Other inputs do.
       if (contentsBlock.type != 'input_dummy') {
         name = escapeString(contentsBlock.getFieldValue('INPUTNAME'));
       }
+      code.push('    this.' + TYPES[contentsBlock.type] + '(' + name + ')');
       var check = getOptTypesFrom(contentsBlock, 'TYPE');
-      code.push('    this.' + TYPES[contentsBlock.type] +
-          '(' + name + ')');
       if (check) {
         code.push('        .setCheck(' + check + ')');
       }
+      var align = contentsBlock.getFieldValue('ALIGN');
       if (align != 'LEFT') {
         code.push('        .setAlign(Blockly.ALIGN_' + align + ')');
       }
-      for (var x = 0; x < fields.length; x++) {
-        code.push('        .appendField(' + fields[x] + ')');
+      var fields = getFieldsJs_(contentsBlock.getInputTargetBlock('FIELDS'));
+      for (var i = 0; i < fields.length; i++) {
+        code.push('        .appendField(' + fields[i] + ')');
       }
       // Add semicolon to last line to finish the statement.
       code[code.length - 1] += ';';
@@ -173,20 +207,21 @@ function formatJavaScript(code, rootBlock) {
   // Generate output, or next/previous connections.
   switch (rootBlock.getFieldValue('CONNECTIONS')) {
     case 'LEFT':
-      code.push(connectionLineJS_('setOutput', 'OUTPUTTYPE'));
+      code.push(connectionLineJs_('setOutput', 'OUTPUTTYPE'));
       break;
     case 'BOTH':
-      code.push(connectionLineJS_('setPreviousStatement', 'TOPTYPE'));
-      code.push(connectionLineJS_('setNextStatement', 'BOTTOMTYPE'));
+      code.push(connectionLineJs_('setPreviousStatement', 'TOPTYPE'));
+      code.push(connectionLineJs_('setNextStatement', 'BOTTOMTYPE'));
       break;
     case 'TOP':
-      code.push(connectionLineJS_('setPreviousStatement', 'TOPTYPE'));
+      code.push(connectionLineJs_('setPreviousStatement', 'TOPTYPE'));
       break;
     case 'BOTTOM':
-      code.push(connectionLineJS_('setNextStatement', 'BOTTOMTYPE'));
+      code.push(connectionLineJs_('setNextStatement', 'BOTTOMTYPE'));
       break;
   }
   code.push("    this.setTooltip('');");
+  code.push("    this.setHelpUrl('http://www.example.com/');");
   code.push("  }");
   code.push("};");
 }
@@ -198,7 +233,7 @@ function formatJavaScript(code, rootBlock) {
  * @return {string} Line of JavaScript code to create connection.
  * @private
  */
-function connectionLineJS_(functionName, typeName) {
+function connectionLineJs_(functionName, typeName) {
   var type = getOptTypesFrom(getRootBlock(), typeName);
   if (type) {
     type = ', ' + type;
@@ -209,11 +244,12 @@ function connectionLineJS_(functionName, typeName) {
 }
 
 /**
- * Returns a field string and any config.
- * @param {!Blockly.Block} block Field block.
- * @return {string} Field string.
+ * Returns field strings and any config.
+ * @param {!Blockly.Block} block Input block.
+ * @return {!Array.<string>} Field strings.
+ * @private
  */
-function getFields(block) {
+function getFieldsJs_(block) {
   var fields = [];
   while (block) {
     if (!block.disabled && !block.getInheritedDisabled()) {
@@ -253,10 +289,8 @@ function getFields(block) {
               escapeString(block.getFieldValue('FIELDNAME')));
           break;
         case 'field_variable':
-          // Result:
-          // new Blockly.FieldVariable('item'), 'VAR'
-          var varname = block.getFieldValue('TEXT');
-          varname = varname ? escapeString(varname) : 'null';
+          // Result: new Blockly.FieldVariable('item'), 'VAR'
+          var varname = escapeString(block.getFieldValue('TEXT') || null);
           fields.push('new Blockly.FieldVariable(' + varname + '), ' +
               escapeString(block.getFieldValue('FIELDNAME')));
           break;
@@ -264,9 +298,9 @@ function getFields(block) {
           // Result:
           // new Blockly.FieldDropdown([['yes', '1'], ['no', '0']]), 'TOGGLE'
           var options = [];
-          for (var x = 0; x < block.optionCount_; x++) {
-            options[x] = '[' + escapeString(block.getFieldValue('USER' + x)) +
-                ', ' + escapeString(block.getFieldValue('CPU' + x)) + ']';
+          for (var i = 0; i < block.optionCount_; i++) {
+            options[i] = '[' + escapeString(block.getFieldValue('USER' + i)) +
+                ', ' + escapeString(block.getFieldValue('CPU' + i)) + ']';
           }
           if (options.length) {
             fields.push('new Blockly.FieldDropdown([' +
@@ -291,16 +325,100 @@ function getFields(block) {
 }
 
 /**
+ * Returns field strings and any config.
+ * @param {!Blockly.Block} block Input block.
+ * @return {!Array.<string|!Object>} Array of static text and field configs.
+ * @private
+ */
+function getFieldsJson_(block) {
+  var fields = [];
+  while (block) {
+    if (!block.disabled && !block.getInheritedDisabled()) {
+      switch (block.type) {
+        case 'field_static':
+          // Result: 'hello'
+          fields.push(block.getFieldValue('TEXT'));
+          break;
+        case 'field_input':
+          fields.push({
+            type: block.type,
+            name: block.getFieldValue('FIELDNAME'),
+            text: block.getFieldValue('TEXT')
+          });
+          break;
+        case 'field_angle':
+          fields.push({
+            type: block.type,
+            name: block.getFieldValue('FIELDNAME'),
+            angle: block.getFieldValue('ANGLE')
+          });
+          break;
+        case 'field_checkbox':
+          fields.push({
+            type: block.type,
+            name: block.getFieldValue('FIELDNAME'),
+            checked: block.getFieldValue('CHECKED')
+          });
+          break;
+        case 'field_colour':
+          fields.push({
+            type: block.type,
+            name: block.getFieldValue('FIELDNAME'),
+            colour: block.getFieldValue('COLOUR')
+          });
+          break;
+        case 'field_date':
+          fields.push({
+            type: block.type,
+            name: block.getFieldValue('FIELDNAME'),
+            date: block.getFieldValue('DATE')
+          });
+          break;
+        case 'field_variable':
+          fields.push({
+            type: block.type,
+            name: block.getFieldValue('FIELDNAME'),
+            variable: block.getFieldValue('TEXT') || null
+          });
+          break;
+        case 'field_dropdown':
+          var options = [];
+          for (var i = 0; i < block.optionCount_; i++) {
+            options[i] = [block.getFieldValue('USER' + i),
+                block.getFieldValue('CPU' + i)];
+          }
+          if (options.length) {
+            fields.push({
+              type: block.type,
+              name: block.getFieldValue('FIELDNAME'),
+              options: options
+            });
+          }
+          break;
+        case 'field_image':
+          fields.push({
+            type: block.type,
+            name: block.getFieldValue('FIELDNAME'),
+            src: block.getFieldValue('SRC'),
+            width: Number(block.getFieldValue('WIDTH')),
+            height: Number(block.getFieldValue('HEIGHT')),
+            alt: block.getFieldValue('ALT')
+          });
+          break;
+      }
+    }
+    block = block.nextConnection && block.nextConnection.targetBlock();
+  }
+  return fields;
+}
+
+/**
  * Escape a string.
  * @param {string} string String to escape.
  * @return {string} Escaped string surrouned by quotes.
  */
 function escapeString(string) {
-  if (JSON && JSON.stringify) {
-    return JSON.stringify(string);
-  }
-  // Hello MSIE 8.
-  return '"' + string.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  return JSON.stringify(string);
 }
 
 /**
