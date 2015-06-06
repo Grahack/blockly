@@ -83,14 +83,8 @@ function updateLanguage() {
 function formatJson(code, rootBlock) {
   var JS = {};
   JS.name = blockType;
-  // Generate colour.
-  var colourBlock = rootBlock.getInputTargetBlock('COLOUR');
-  if (colourBlock && !colourBlock.disabled) {
-    var hue = parseInt(colourBlock.getFieldValue('HUE'), 10);
-    JS.colour = hue;
-  }
   // Generate inputs.
-  var template = [];
+  var message = [];
   var args = [];
   var contentsBlock = rootBlock.getInputTargetBlock('INPUTS');
   while (contentsBlock) {
@@ -98,15 +92,14 @@ function formatJson(code, rootBlock) {
       var fields = getFieldsJson_(contentsBlock.getInputTargetBlock('FIELDS'));
       for (var i = 0; i < fields.length; i++) {
         if (typeof fields[i] == 'string') {
-          template.push(fields[i].replace(/%/g, '%%'));
+          message.push(fields[i].replace(/%/g, '%%'));
         } else {
           args.push(fields[i]);
-          template.push('%' + args.length);
+          message.push('%' + args.length);
         }
       }
 
       var input = {type: contentsBlock.type};
-      input.name = '';
       // Dummy inputs don't have names.  Other inputs do.
       if (contentsBlock.type != 'input_dummy') {
         input.name = contentsBlock.getFieldValue('INPUTNAME');
@@ -120,12 +113,21 @@ function formatJson(code, rootBlock) {
         input.align = align;
       }
       args.push(input);
-      template.push('%' + args.length);
+      message.push('%' + args.length);
     }
     contentsBlock = contentsBlock.nextConnection &&
         contentsBlock.nextConnection.targetBlock();
   }
-  JS.template = template.join(' ');
+  // Remove last input if dummy.
+  var lastInput = args[args.length - 1];
+  if (lastInput && lastInput.type == 'input_dummy') {
+    if (lastInput.align) {
+      JS.lastDummyAlign = lastInput.align;
+    }
+    args.pop();
+    message.pop();
+  }
+  JS.message = message.join(' ');
   JS.args = args;
   // Generate inline/external switch.
   if (rootBlock.getFieldValue('INLINE') == 'INT') {
@@ -152,6 +154,12 @@ function formatJson(code, rootBlock) {
           JSON.parse(getOptTypesFrom(rootBlock, 'BOTTOMTYPE') || 'null');
       break;
   }
+  // Generate colour.
+  var colourBlock = rootBlock.getInputTargetBlock('COLOUR');
+  if (colourBlock && !colourBlock.disabled) {
+    var hue = parseInt(colourBlock.getFieldValue('HUE'), 10);
+    JS.colour = hue;
+  }
   JS.tooltip = '';
   JS.helpUrl = 'http://www.example.com/';
   code.push(JSON.stringify(JS, null, '  '));
@@ -163,12 +171,6 @@ function formatJson(code, rootBlock) {
 function formatJavaScript(code, rootBlock) {
   code.push("Blockly.Blocks['" + blockType + "'] = {");
   code.push("  init: function() {");
-  // Generate colour.
-  var colourBlock = rootBlock.getInputTargetBlock('COLOUR');
-  if (colourBlock && !colourBlock.disabled) {
-    var hue = parseInt(colourBlock.getFieldValue('HUE'), 10);
-    code.push('    this.setColour(' + hue + ');');
-  }
   // Generate inputs.
   var TYPES = {'input_value': 'appendValueInput',
                'input_statement': 'appendStatementInput',
@@ -219,6 +221,12 @@ function formatJavaScript(code, rootBlock) {
     case 'BOTTOM':
       code.push(connectionLineJs_('setNextStatement', 'BOTTOMTYPE'));
       break;
+  }
+  // Generate colour.
+  var colourBlock = rootBlock.getInputTargetBlock('COLOUR');
+  if (colourBlock && !colourBlock.disabled) {
+    var hue = parseInt(colourBlock.getFieldValue('HUE'), 10);
+    code.push('    this.setColour(' + hue + ');');
   }
   code.push("    this.setTooltip('');");
   code.push("    this.setHelpUrl('http://www.example.com/');");
@@ -581,15 +589,22 @@ function updatePreview() {
          scrollbars: true});
     oldDir = newDir;
   }
-  var code = [];
-  var rootBlock = getRootBlock();
-  if (rootBlock) {
-    formatJavaScript(code, rootBlock);
-  }
   previewWorkspace.clear();
-  eval(code.join('\n'));
+  if (Blockly.Blocks[blockType]) {
+    throw 'Block name collides with existing property: ' + blockType;
+  }
+  var code = document.getElementById('languagePre').textContent;
+  var format = document.getElementById('format').value;
+  if (format == 'JSON') {
+    Blockly.Blocks.addTemplate(JSON.parse(code));
+  } else if (format == 'JavaScript') {
+    eval(code);
+  } else {
+    throw 'Unknown format: ' + format;
+  }
   // Create the preview block.
   var previewBlock = Blockly.Block.obtain(previewWorkspace, blockType);
+  delete Blockly.Blocks[blockType];
   previewBlock.initSvg();
   previewBlock.render();
   previewBlock.setMovable(false);

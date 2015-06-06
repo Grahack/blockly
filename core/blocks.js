@@ -104,28 +104,18 @@ Blockly.Blocks.genUid = function() {
  *       menu option 'Remove output' will be replaced by 'Add Output'.  If
  *       selected, the output will reappear and the statement connectors will
  *       disappear.
- *     - mutationToDomFunc {Function} TODO desc.
- *     - domToMutationFunc {Function} TODO desc.
- *     - customContextMenuFunc {Function} TODO desc.
  *     Additional fields will be ignored.
  */
-Blockly.Blocks.addTemplate = function(details) {
-  // Validate inputs.  TODO: Add more.
-  goog.asserts.assert(details.blockName);
-  goog.asserts.assert(Blockly.Blocks[details.blockName],
-      'Blockly.Blocks already has a field named ', details.blockName);
-  goog.asserts.assert(details.message);
-  goog.asserts.assert(details.colour && typeof details.colour == 'number' &&
-      details.colour >= 0 && details.colour < 360,
-     'details.colour must be a number from 0 to 360 (exclusive)');
-  if (details.output != 'undefined') {
-    goog.asserts.assert(!details.previousStatement,
-        'When details.output is defined, ' +
-        'details.previousStatement must not be true.');
-    goog.asserts.assert(!details.nextStatement,
-        'When details.output is defined, ' +
-        'details.nextStatement must not be true.');
-  }
+Blockly.Blocks.addTemplate = function(json) {
+  // Validate inputs.
+  goog.asserts.assertString(json['name'], 'Unnamed block.');
+  goog.asserts.assert(Blockly.Blocks[json['name']] === undefined,
+      'Blockly.Blocks already has a field named %s.', json['name']);
+  goog.asserts.assertString(json['message'], 'No message.');
+  goog.asserts.assertArray(json['args'], 'No args.');
+  goog.asserts.assert(json['output'] == undefined ||
+      json['previousStatement'] == undefined,
+      'Must not have both an output and a previousStatement.');
 
   var block = {};
   /**
@@ -133,71 +123,124 @@ Blockly.Blocks.addTemplate = function(details) {
    * @this Blockly.Block
    */
   block.init = function() {
-    var thisBlock = this;
     // Set basic properties of block.
-    this.setColour(details.colour);
-    this.setHelpUrl(details.helpUrl);
-    if (typeof details.tooltip == 'string') {
-      this.setTooltip(details.tooltip);
-    } else if (typeof details.tooltip == 'function') {
-      this.setTooltip(function() {
-        return details.tooltip(thisBlock);
-      });
+    this.setColour(json['colour']);
+
+    // Parse the message and interpolate the arguments.
+    // Build a list of elements.
+    var tokens = json['message'].split(/(%\d+)/);
+    var indexDup = [];
+    var indexCount = 0;
+    var elements = [];
+    for (var i = 0; i < tokens.length; i++) {
+      var token = tokens[i];
+      if (token.match(/^%\d+$/)) {
+        var index = parseInt(token.substring(1), 10);
+        goog.asserts.assert(index > 0 && index <= json['args'].length,
+            'Message index "%s" out of range.', token);
+        goog.asserts.assert(!indexDup[index],
+            'Message index "%s" duplicated.', token);
+        indexDup[index] = true;
+        indexCount++;
+        elements.push(json['args'][index - 1]);
+      } else {
+        token = token.replace(/%%/g, '%').trim();
+        if (token) {
+          elements.push(token);
+        }
+      }
+    }
+    goog.asserts.assert(indexCount == json['args'].length,
+        'Message does not reference all %s arg(s).', json['args'].length);
+    // Add last dummy input if needed.
+    if (elements.length && typeof elements[elements.length - 1] == 'string') {
+      var input = {type: 'input_dummy'};
+      if (json['lastDummyAlign']) {
+        input['align'] = json['lastDummyAlign'];
+      }
+      elements.push(input);
+    }
+    // Populate block with inputs and fields.
+    var fieldStack = [];
+    for (var i = 0; i < elements.length; i++) {
+      var element = elements[i];
+      if (typeof element == 'string') {
+        fieldStack.push([element, undefined]);
+      } else {
+        var field = null;
+        var input = null;
+        switch (element['type']) {
+          case 'field_input':
+            field = new Blockly.FieldTextInput(element['text']);
+            break;
+          case 'field_angle':
+            field = new Blockly.FieldTextInput(element['angle']);
+            break;
+          case 'field_checkbox':
+            field = new Blockly.FieldTextInput(element['checked']);
+            break;
+          case 'field_colour':
+            field = new Blockly.FieldTextInput(element['colour']);
+            break;
+          case 'field_date':
+            field = new Blockly.FieldTextInput(element['date']);
+            break;
+          case 'field_variable':
+            field = new Blockly.FieldTextInput(element['variable']);
+            break;
+          case 'field_dropdown':
+            field = new Blockly.FieldTextInput(element['options']);
+            break;
+          case 'field_image':
+            field = new Blockly.FieldTextInput(element['src'],
+                element['width'], element['height'], element['alt']);
+            break;
+          case 'input_value':
+            input = this.appendValueInput(element['name']);
+            break;
+          case 'input_statement':
+            input = this.appendStatementInput(element['name']);
+            break;
+          case 'input_dummy':
+            input = this.appendDummyInput(element['name']);
+            break;
+          default:
+            throw 'Unknown element type: ' + element['type'];
+        }
+        if (field) {
+          fieldStack.push([field, element['name']]);
+        } else if (input) {
+          if (element['check']) {
+            input.setCheck(element['check']);
+          }
+          if (element['align']) {
+            input.setAlign(element['align']);
+          }
+          for (var j = 0; j < fieldStack.length; j++) {
+            input.appendField(fieldStack[j][0], fieldStack[j][1]);
+          }
+          fieldStack.length = 0;
+        }
+      }
+    }
+
+    if (json['inputsInline']) {
+      this.setInputsInline(true);
     }
     // Set output and previous/next connections.
-    if (details.output != 'undefined') {
-      this.setOutput(true, details.output);
-    } else {
-      this.setPreviousStatement(
-          typeof details.previousStatement == 'undefined' ?
-              true : details.previousStatement);
-      this.setNextStatement(
-          typeof details.nextStatement == 'undefined' ?
-              true : details.nextStatement);
+    if (json['output'] !== undefined) {
+      this.setOutput(true, json['output']);
     }
-    // Build up arguments in the format expected by interpolateMsg.
-    var interpArgs = [];
-    interpArgs.push(details.text);
-    if (details.args) {
-      details.args.forEach(function(arg) {
-        goog.asserts.assert(arg.name);
-        goog.asserts.assert(arg.check != 'undefined');
-        if (arg.type == 'undefined' || arg.type == Blockly.INPUT_VALUE) {
-          interpArgs.push([arg.name,
-                           arg.check,
-                           typeof arg.align == 'undefined' ?
-                               Blockly.ALIGN_RIGHT : arg.align]);
-        } else {
-          // TODO: Write code for other input types.
-          goog.asserts.fail('addTemplate() can only handle value inputs.');
-        }
-      });
+    if (json['previousStatement'] !== undefined) {
+      this.setPreviousStatement(true, json['previousStatement']);
     }
-    // Neil, how would you recommend specifying the final dummy alignment?
-    // Should it be a top-level field in details?
-    interpArgs.push(Blockly.ALIGN_RIGHT);
-    if (details.inline) {
-      this.setInlineInputs(details.inline);
+    if (json['nextStatement'] !== undefined) {
+      this.setNextStatement(true, json['nextStatement']);
     }
-    Blockly.Block.prototype.interpolateMsg.apply(this, interpArgs);
+    this.setTooltip(json['tooltip']);
+    this.setHelpUrl(json['helpUrl']);
   };
 
-  if (details.switchable) {
-    /**
-     * Create mutationToDom if needed.
-     * @this Blockly.Block
-     */
-    block.mutationToDom = function() {
-      var container = details.mutationToDomFunc ?
-          details.mutatationToDomFunc() : document.createElement('mutation');
-      container.setAttribute('is_statement', this['isStatement'] || false);
-      return container;
-    };
-  } else {
-    block.mutationToDom = details.mutationToDomFunc;
-  }
-  // TODO: Add domToMutation and customContextMenu.
-
   // Add new block to Blockly.Blocks.
-  Blockly.Blocks[details.blockName] = block;
+  Blockly.Blocks[json['name']] = block;
 };
