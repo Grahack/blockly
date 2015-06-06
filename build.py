@@ -260,7 +260,7 @@ class Gen_compressed(threading.Thread):
     def file_lookup(name):
       if not name.startswith('Input_'):
         return '???'
-      n = int(name[6:])
+      n = int(name[6:]) - 1
       return filenames[n]
 
     if json_data.has_key('serverErrors'):

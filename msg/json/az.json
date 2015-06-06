@@ -271,7 +271,7 @@
 	"LISTS_GET_SUBLIST_TOOLTIP": "Siyahının təyin olunmuş hissəsinin surətini yaradın.",
 	"VARIABLES_GET_TOOLTIP": "Bu dəyişənin qiymətini qaytarır.",
 	"VARIABLES_GET_CREATE_SET": "'%1 - i təyin et' - i yarat",
-	"VARIABLES_SET_TAIL": "- i bu qiymət ilə təyin et:",
+	"VARIABLES_SET": "%1 - i bu qiymət ilə təyin et: %2",
 	"VARIABLES_SET_TOOLTIP": "Bu dəyişəni daxil edilmiş qiymətə bərabər edir.",
 	"VARIABLES_SET_CREATE_GET": "'%1 - i götür' - ü yarat",
 	"PROCEDURES_DEFNORETURN_TITLE": "icra et:",

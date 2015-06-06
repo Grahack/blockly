@@ -82,7 +82,6 @@ function updateLanguage() {
  */
 function formatJson(code, rootBlock) {
   var JS = {};
-  JS.name = blockType;
   // Generate inputs.
   var message = [];
   var args = [];
@@ -291,7 +290,7 @@ function getFieldsJs_(block) {
               escapeString(block.getFieldValue('FIELDNAME')));
           break;
         case 'field_date':
-          // Result: new Blockly.FieldColour('2015-02-04'), 'DATE'
+          // Result: new Blockly.FieldDate('2015-02-04'), 'DATE'
           fields.push('new Blockly.FieldDate(' +
               escapeString(block.getFieldValue('DATE')) + '), ' +
               escapeString(block.getFieldValue('FIELDNAME')));
@@ -698,8 +697,8 @@ function init() {
   mainWorkspace.addChangeListener(onchange);
   document.getElementById('direction')
       .addEventListener('change', updatePreview);
-  document.getElementById('format')
-      .addEventListener('change', updateLanguage);
+  document.getElementById('format').addEventListener('change',
+      function() {updateLanguage(); updatePreview();});
   document.getElementById('language')
       .addEventListener('change', updateGenerator);
 }
